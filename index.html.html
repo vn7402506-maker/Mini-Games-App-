@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Игра в Кости - Дуэль</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        }
+        body {
+            background-color: var(--tg-theme-bg-color, #1f2128);
+            color: var(--tg-theme-text-color, #ffffff);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            width: 100%;
+            max-width: 400px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        h1 {
+            font-size: 24px;
+            margin-bottom: 8px;
+            text-align: center;
+            color: var(--tg-theme-header-bg-color, #f3f4f6);
+        }
+        .subtitle {
+            font-size: 14px;
+            color: var(--tg-theme-hint-color, #9ca3af);
+            margin-bottom: 25px;
+            text-align: center;
+        }
+        .card {
+            background: var(--tg-theme-secondary-bg-color, #2d3139);
+            border-radius: 16px;
+            padding: 20px;
+            width: 100%;
+            margin-bottom: 16px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            text-align: center;
+        }
+        .btn {
+            background-color: var(--tg-theme-button-color, #3b82f6);
+            color: var(--tg-theme-button-text-color, #ffffff);
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 12px;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 10px;
+            transition: opacity 0.2s, transform 0.1s;
+        }
+        .btn:active {
+            transform: scale(0.97);
+        }
+        .btn:disabled {
+            background-color: #4b5563;
+            cursor: not-allowed;
+        }
+        .btn-secondary {
+            background-color: #4b5563;
+        }
+        input {
+            width: 100%;
+            padding: 12px;
+            border-radius: 10px;
+            border: 1px solid #4b5563;
+            background: var(--tg-theme-bg-color, #1f2128);
+            color: var(--tg-theme-text-color, #ffffff);
+            font-size: 16px;
+            margin-top: 10px;
+            text-align: center;
+        }
+        .hidden {
+            display: none !important;
+        }
+        /* Стили для костей */
+        .dice-container {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .dice {
+            width: 60px;
+            height: 60px;
+            background: #ffffff;
+            color: #111827;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+            font-weight: bold;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            transition: transform 0.5s ease;
+        }
+        .dice.rolling {
+            animation: shake 0.5s infinite;
+        }
+        @keyframes shake {
+            0% { transform: translate(1px, 1px) rotate(0deg); }
+            20% { transform: translate(-3px, 0px) rotate(-10deg); }
+            40% { transform: translate(1px, -1px) rotate(10deg); }
+            60% { transform: translate(-1px, 2px) rotate(0deg); }
+            80% { transform: translate(3px, 1px) rotate(-5deg); }
+            100% { transform: translate(1px, -2px) rotate(5deg); }
+        }
+        .players-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin: 15px 0;
+            text-align: left;
+        }
+        .player-item {
+            display: flex;
+            justify-content: space-between;
+            background: rgba(0,0,0,0.2);
+            padding: 10px 14px;
+            border-radius: 8px;
+            align-items: center;
+        }
+        .status-badge {
+            font-size: 12px;
+            padding: 4px 8px;
+            border-radius: 6px;
+            background: #10b981;
+            color: white;
+        }
+        .room-code-display {
+            font-size: 20px;
+            font-weight: bold;
+            letter-spacing: 2px;
+            color: #60a5fa;
+            margin: 10px 0;
+            background: rgba(0,0,0,0.3);
+            padding: 8px;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>🎲 Игра в Кости</h1>
+        <div class="subtitle">Сразись с друзьями в реальном времени!</div>
+
+        <!-- Меню выбора действия -->
+        <div id="menu-screen" class="card">
+            <button class="btn" onclick="createRoom()">Создать комнату</button>
+            <div style="margin: 15px 0; color: var(--tg-theme-hint-color, #9ca3af); font-size: 14px;">или</div>
+            <input type="text" id="room-code-input" placeholder="Введите код комнаты">
+            <button class="btn btn-secondary" onclick="joinRoomByInput()">Войти по коду</button>
+        </div>
+
+        <!-- Комната ожидания / Лобби -->
+        <div id="lobby-screen" class="card hidden">
+            <h3>Лобби комнаты</h3>
+            <div class="room-code-display" id="display-room-code">----</div>
+            <div style="font-size: 13px; color: var(--tg-theme-hint-color, #9ca3af); margin-bottom: 10px;">
+                Поделись этим кодом или отправь ссылку другу в чат!
+            </div>
+            
+            <div class="players-list" id="lobby-players">
+                <!-- Список игроков -->
+            </div>
+
+            <button class="btn" id="start-game-btn" onclick="startGame()" disabled>Ждем второго игрока...</button>
+            <button class="btn btn-secondary" onclick="leaveRoom()" style="margin-top: 8px;">Выйти</button>
+        </div>
+
+        <!-- Игровой экран -->
+        <div id="game-screen" class="card hidden">
+            <h3 id="game-status-title">Ход игрока</h3>
+            <div style="font-size: 13px; color: var(--tg-theme-hint-color, #9ca3af); margin-bottom: 10px;" id="round-info">Раунд 1 из 3</div>
+
+            <div class="dice-container">
+                <div id="dice-1" class="dice">?</div>
+                <div id="dice-2" class="dice">?</div>
+            </div>
+
+            <div class="players-list" id="game-scores">
+                <!-- Очки игроков -->
+            </div>
+
+            <button class="btn" id="roll-btn" onclick="rollDice()" disabled>БРОСИТЬ КОСТИ</button>
+        </div>
+
+        <!-- Экран результатов игры -->
+        <div id="result-screen" class="card hidden">
+            <h2 id="winner-title" style="margin-bottom: 15px;">Победитель! 🎉</h2>
+            <div class="players-list" id="final-scores" style="margin-bottom: 20px;"></div>
+            <button class="btn" onclick="returnToMenu()">В меню</button>
+        </div>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+
+        // Инициализация Firebase (Публичная демо-конфигурация для работы мини-приложений)
+        const firebaseConfig = {
+            databaseURL: "https://telegram-dice-game-default-rtdb.firebaseio.com/"
+        };
+        
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const db = firebase.database();
+
+        // Данные игрока
+        const user = tg.initDataUnsafe?.user || {
+            id: Math.floor(Math.random() * 1000000),
+            first_name: "Игрок_" + Math.floor(Math.random() * 1000)
+        };
+
+        let currentRoomId = null;
+        let isHost = false;
+        let roomRef = null;
+        let myPlayerKey = user.id.toString();
+
+        // Проверка URL на наличие кода комнаты (если открыто по ссылке-приглашению)
+        const urlParams = new URLSearchParams(window.location.search);
+        const inviteRoom = urlParams.get('room');
+        if (inviteRoom) {
+            setTimeout(() => {
+                document.getElementById('room-code-input').value = inviteRoom;
+                joinRoom(inviteRoom);
+            }, 500);
+        }
+
+        function showScreen(screenId) {
+            ['menu-screen', 'lobby-screen', 'game-screen', 'result-screen'].forEach(id => {
+                document.getElementById(id).classList.add('hidden');
+            });
+            document.getElementById(screenId).classList.remove('hidden');
+        }
+
+        function generateRoomCode() {
+            return Math.random().toString(36).substring(2, 8).toUpperCase();
+        }
+
+        function createRoom() {
+            currentRoomId = generateRoomCode();
+            isHost = true;
+            roomRef = db.ref('rooms/' + currentRoomId);
+
+            const playerData = {
+                name: user.first_name,
+                score: 0,
+                dice: [0, 0],
+                rolled: false,
+                isHost: true
+            };
+
+            roomRef.set({
+                status: 'waiting',
+                host: myPlayerKey,
+                turn: myPlayerKey,
+                round: 1,
+                players: {
+                    [myPlayerKey]: playerData
+                }
+            }).then(() => {
+                document.getElementById('display-room-code').textContent = currentRoomId;
+                setupRoomListeners();
+                showScreen('lobby-screen');
+            });
+        }
+
+        function joinRoomByInput() {
+            const code = document.getElementById('room-code-input').value.trim().toUpperCase();
+            if (!code) {
+                alert('Введите код комнаты!');
+                return;
+            }
+            joinRoom(code);
+        }
+
+        function joinRoom(code) {
+            currentRoomId = code;
+            isHost = false;
+            roomRef = db.ref('rooms/' + currentRoomId);
+
+            roomRef.once('value').then(snapshot => {
+                const roomData = snapshot.val();
+                if (!roomData) {
+                    alert('Комната не найдена!');
+                    return;
+                }
+                if (roomData.status !== 'waiting') {
+                    alert('Игра уже началась или завершена!');
+                    return;
+                }
+
+                const playersCount = roomData.players ? Object.keys(roomData.players).length : 0;
+                if (playersCount >= 2 && !roomData.players[myPlayerKey]) {
+                    alert('Комната заполнена (максимум 2 игрока)!');
+                    return;
+                }
+
+                const playerData = {
+                    name: user.first_name,
+                    score: 0,
+                    dice: [0, 0],
+                    rolled: false,
+                    isHost: false
+                };
+
+                roomRef.child('players/' + myPlayerKey).set(playerData).then(() => {
+                    document.getElementById('display-room-code').textContent = currentRoomId;
+                    setupRoomListeners();
+                    showScreen('lobby-screen');
+                });
+            });
+        }
+
+        function setupRoomListeners() {
+            roomRef.on('value', snapshot => {
+                const room = snapshot.val();
+                if (!room) return;
+
+                if (room.status === 'waiting') {
+                    showScreen('lobby-screen');
+                    updateLobbyUI(room);
+                } else if (room.status === 'playing') {
+                    showScreen('game-screen');
+                    updateGameUI(room);
+                } else if (room.status === 'finished') {
+                    showScreen('result-screen');
+                    updateResultUI(room);
+                }
+            });
+        }
+
+        function updateLobbyUI(room) {
+            const playersListEl = document.getElementById('lobby-players');
+            playersListEl.innerHTML = '';
+            
+            const players = room.players || {};
+            const playerKeys = Object.keys(players);
+
+            playerKeys.forEach(key => {
+                const p = players[key];
+                playersListEl.innerHTML += `
+                    <div class="player-item">
+                        <span>👤 ${p.name}</span>
+                        <span class="status-badge">Готов</span>
+                    </div>
+                `;
+            });
+
+            const startBtn = document.getElementById('start-game-btn');
+            
+            // Разрешаем начать игру даже одному для теста или если второй игрок долго не заходит
+            if (isHost) {
+                startBtn.disabled = false;
+                startBtn.textContent = playerKeys.length < 2 ? "НАЧАТЬ ОДНОМУ (Тест)" : "НАЧАТЬ ИГРУ";
+            } else {
+                startBtn.disabled = true;
+                startBtn.textContent = "Ожидание хоста...";
+            }
+    
+        }
+
+        function startGame() {
+            if (!isHost) return;
+            roomRef.update({
+                status: 'playing',
+                round: 1
+            });
+        }
+
+        function updateGameUI(room) {
+            const players = room.players || {};
+            const myData = players[myPlayerKey] || { score: 0, dice: [0,0], rolled: false };
+            
+            // Список очков
+            const scoresEl = document.getElementById('game-scores');
+            scoresEl.innerHTML = '';
+            Object.keys(players).forEach(key => {
+                const p = players[key];
+                const isMe = key === myPlayerKey;
+                scoresEl.innerHTML += `
+                    <div class="player-item">
+                        <span>${isMe ? '👉 Вы' : p.name}</span>
+                        <span><b>${p.score}</b> очков</span>
+                    </div>
+                `;
+            });
+
+            document.getElementById('round-info').textContent = `Раунд ${room.round} из 3`;
+
+            // Кости текущего игрока
+            document.getElementById('dice-1').textContent = myData.dice[0] || '?';
+            document.getElementById('dice-2').textContent = myData.dice[1] || '?';
+
+            const rollBtn = document.getElementById('roll-btn');
+            if (!myData.rolled) {
+                rollBtn.disabled = false;
+                rollBtn.textContent = "БРОСИТЬ КОСТИ";
+            } else {
+                rollBtn.disabled = true;
+                rollBtn.textContent = "Ожидание соперника...";
+            }
+
+            // Проверяем, сделали ли ход оба игрока, и если хост — переводим раунд
+            if (isHost) {
+                const allRolled = Object.values(players).every(p => p.rolled);
+                if (allRolled) {
+                    setTimeout(() => {
+                        nextRoundOrFinish(room);
+                    }, 2500);
+                }
+            }
+        }
+
+        function rollDice() {
+            const rollBtn = document.getElementById('roll-btn');
+            rollBtn.disabled = true;
+
+            const d1El = document.getElementById('dice-1');
+            const d2El = document.getElementById('dice-2');
+            d1El.classList.add('rolling');
+            d2El.classList.add('rolling');
+
+            if (tg.HapticFeedback) {
+                tg.HapticFeedback.impactOccurred('medium');
+            }
+
+            setTimeout(() => {
+                d1El.classList.remove('rolling');
+                d2El.classList.remove('rolling');
+
+                const d1 = Math.floor(Math.random() * 6) + 1;
+                const d2 = Math.floor(Math.random() * 6) + 1;
+                const roundSum = d1 + d2;
+
+                roomRef.child('players/' + myPlayerKey).once('value').then(snap => {
+                    const currentData = snap.val();
+                    const newScore = (currentData.score || 0) + roundSum;
+
+                    roomRef.child('players/' + myPlayerKey).update({
+                        dice: [d1, d2],
+                        score: newScore,
+                        rolled: true
+                    });
+                });
+            }, 800);
+        }
+
+        function nextRoundOrFinish(room) {
+            const players = room.players;
+            const currentRound = room.round;
+
+            if (currentRound < 3) {
+                // Сбрасываем статус rolled для нового раунда
+                const updates = {};
+                Object.keys(players).forEach(key => {
+                    updates[`players/${key}/rolled`] = false;
+                    updates[`players/${key}/dice`] = [0, 0];
+                });
+                updates['round'] = currentRound + 1;
+                roomRef.update(updates);
+            } else {
+                // Игра окончена
+                roomRef.update({ status: 'finished' });
+            }
+        }
+
+        function updateResultUI(room) {
+            const players = room.players || {};
+            const scoresEl = document.getElementById('final-scores');
+            scoresEl.innerHTML = '';
+
+            let sortedPlayers = Object.values(players).sort((a, b) => b.score - a.score);
+            let winner = sortedPlayers[0];
+
+            document.getElementById('winner-title').textContent = winner ? `Победитель: ${winner.name}! 🎉` : "Игра окончена";
+
+            sortedPlayers.forEach((p, index) => {
+                scoresEl.innerHTML += `
+                    <div class="player-item">
+                        <span>#${index + 1} ${p.name}</span>
+                        <span><b>${p.score}</b> очков</span>
+                    </div>
+                `;
+            });
+        }
+
+        function leaveRoom() {
+            if (roomRef) {
+                roomRef.child('players/' + myPlayerKey).remove();
+            }
+            currentRoomId = null;
+            showScreen('menu-screen');
+        }
+
+        function returnToMenu() {
+            if (roomRef) {
+                roomRef.remove();
+            }
+            currentRoomId = null;
+            showScreen('menu-screen');
+        }
+    </script>
+</body>
+</html>
